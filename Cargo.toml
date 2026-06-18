@@ -1,0 +1,61 @@
+[workspace]
+resolver = "2"
+members = [
+    "droidprobe-parser",
+    "droidprobe-command",
+    "droidprobe-core",
+    "droidprobe-tui",
+    "droidprobe-mcp",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.82"
+license = "MIT"
+authors = ["Orhan Balci <orhanbalci@gmail.com>"]
+repository = "https://github.com/orhanbalci/droidprobe"
+
+[workspace.dependencies]
+# Internal crates
+droidprobe-parser = { path = "droidprobe-parser", version = "0.1.0" }
+droidprobe-command = { path = "droidprobe-command", version = "0.1.0" }
+droidprobe-core = { path = "droidprobe-core", version = "0.1.0" }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+futures = "0.3"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Logging / tracing (writes to file or stderr, never the TUI buffer)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# ADB transport
+adb_client = "2"
+
+# TUI
+ratatui = "0.29"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+# MCP
+rmcp = { version = "0.16", features = ["server", "transport-io"] }
+schemars = "1"
+
+# Misc
+regex = "1"
+clap = { version = "4", features = ["derive"] }
+once_cell = "1"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
