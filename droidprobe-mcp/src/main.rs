@@ -100,6 +100,73 @@ impl AndroidInspector {
         .await
     }
 
+    #[tool(description = "Get CPU core count and hardware/chipset name")]
+    async fn get_cpu_info(
+        &self,
+        rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(
+            "device.cpu",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
+    }
+
+    #[tool(description = "Get screen resolution and density")]
+    async fn get_screen_info(
+        &self,
+        rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(
+            "device.screen",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
+    }
+
+    #[tool(description = "Get total and available RAM")]
+    async fn get_memory_info(
+        &self,
+        rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(
+            "device.memory",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
+    }
+
+    #[tool(description = "Get mounted filesystem sizes and free space")]
+    async fn get_storage_info(
+        &self,
+        rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(
+            "device.storage",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
+    }
+
+    #[tool(
+        description = "Get the device IMEI, if readable without a privileged permission (often empty on Android 10+)"
+    )]
+    async fn get_imei(
+        &self,
+        rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        self.call(
+            "device.imei",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
+    }
+
     #[tool(description = "Get battery level, charging state, temperature and voltage")]
     async fn get_battery_status(
         &self,
@@ -161,7 +228,8 @@ impl ServerHandler for AndroidInspector {
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             instructions: Some(
                 "Inspect a connected Android device over ADB. Tools are read-only: \
-                 they report device info, battery, installed packages, package \
+                 they report device identity/hardware (model, CPU, screen, RAM, \
+                 storage, IMEI), battery, installed packages, package \
                  permissions/components, and logcat snapshots. Use get_logcat plus \
                  get_package_details to investigate why an app is misbehaving."
                     .into(),

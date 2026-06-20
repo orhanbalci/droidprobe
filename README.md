@@ -68,10 +68,12 @@ registry.register(Box::new(droidprobe_command::TypedDyn(MyCommand)));
 
 ## Status
 
-Phase 1 (foundation) is scaffolded: 4 tested parsers, 5 built-in commands, the
-registry/engine/poller, a working overview TUI view, and a 5-tool MCP server.
-Phases 2–6 (parser breadth, TUI depth, ATK command parity, MCP polish,
-robustness) are described in ARCHITECTURE.md.
+10 tested parsers, 10 built-in commands, the registry/engine/poller, a TUI
+with Overview/Packages/Logs tabs (package search, permissions, and
+activity/service/receiver/provider component tabs), and a 10-tool MCP server
+covering the same device/package/log surface. Phases 2–6 (parser breadth, TUI
+depth, ATK command parity, MCP polish, robustness) are described in
+ARCHITECTURE.md.
 
 ## License
 
