@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.orhanbalci/droidprobe",
+  "description": "Read-only MCP server for inspecting a connected Android device over ADB: device identity/hardware, battery, installed packages, package permissions/components, and logcat snapshots.",
+  "title": "droidprobe",
+  "repository": {
+    "url": "https://github.com/orhanbalci/droidprobe",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "cargo",
+      "registryBaseUrl": "https://crates.io",
+      "identifier": "droidprobe-mcp",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}

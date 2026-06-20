@@ -57,6 +57,71 @@ cargo run -p droidprobe-mcp        # speaks MCP over stdio
 Register it with an MCP client (e.g. Claude Desktop / Claude Code) by pointing
 the client at the built binary as a stdio server. Tools are **read-only**.
 
+### Register with Claude Code
+
+```bash
+cargo build -p droidprobe-mcp --release
+claude mcp add droidprobe -- "$(pwd)/target/release/droidprobe-mcp"
+claude mcp get droidprobe        # should show "Status: ✔ Connected"
+```
+
+This must run on the same machine as the `adb` server and the USB-attached
+device — the server has no way to reach a device it can't `adb shell` into,
+so there's no meaningful way to run it detached on remote infrastructure
+unless you tunnel `adb` back to it.
+
+### Register with Claude Desktop
+
+Add to `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "droidprobe": {
+      "command": "/absolute/path/to/target/release/droidprobe-mcp"
+    }
+  }
+}
+```
+
+## Distributing droidprobe-mcp
+
+### Publish to crates.io
+
+Path-dependent crates must publish in dependency order — each one needs its
+predecessors already live on crates.io before `cargo publish` will resolve:
+
+```bash
+cargo login                                    # one-time, needs your crates.io API token
+cargo publish -p droidprobe-parser
+cargo publish -p droidprobe-command            # only after droidprobe-parser is live
+cargo publish -p droidprobe-core               # only after droidprobe-command is live
+cargo publish -p droidprobe-mcp                # only after droidprobe-core is live
+cargo publish -p droidprobe-tui                # optional, same dependency floor as mcp
+```
+
+crates.io indexes new releases within a minute or two; `cargo publish` for a
+downstream crate will fail with "no matching package found" if you run it
+too soon after the one before it. Once `droidprobe-mcp` is published, anyone
+with Rust installed can run:
+
+```bash
+cargo install droidprobe-mcp
+```
+
+### List in the MCP registry
+
+The [official MCP registry](https://github.com/modelcontextprotocol/registry)
+publishes via a dedicated CLI and validates namespace ownership through
+GitHub OAuth. A starter [server.json](./server.json) is included in this repo
+— update its `version` to match each crates.io release, then:
+
+```bash
+brew install mcp-publisher
+mcp-publisher login github
+mcp-publisher publish        # validates server.json and submits it
+```
+
 ## Adding your own command
 
 Implement `Command`, wrap it in `TypedDyn`, and register it:
@@ -77,4 +142,4 @@ ARCHITECTURE.md.
 
 ## License
 
-MIT OR Apache-2.0
+MIT
