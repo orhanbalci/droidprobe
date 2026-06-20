@@ -7,10 +7,14 @@
 
 use async_trait::async_trait;
 
-use droidprobe_parser::model::{BatteryInfo, DeviceInfo, LogEntry, PackageDetail, PackageRef};
+use droidprobe_parser::model::{
+    BatteryInfo, CpuInfo, DeviceInfo, ImeiInfo, LogEntry, MemoryInfo, PackageDetail, PackageRef,
+    ScreenInfo, StorageEntry,
+};
 use droidprobe_parser::parsers::{
-    battery::BatteryParser, getprop::GetpropParser, logcat::LogcatParser,
-    packages::PackageListParser,
+    battery::BatteryParser, cpuinfo::CpuInfoParser, getprop::GetpropParser, imei::ImeiInfoParser,
+    logcat::LogcatParser, meminfo::MemInfoParser, package_dump::PackageDumpParser,
+    packages::PackageListParser, screen::ScreenInfoParser, storage::StorageParser,
 };
 use droidprobe_parser::Parse;
 
@@ -103,10 +107,6 @@ impl Command for ListPackagesCmd {
 }
 
 /// Detailed package info via `dumpsys package <name>`.
-///
-/// NOTE: the `dumpsys package` parser is intentionally left as a stub in the
-/// parser crate's roadmap — see implementation plan. This command shows the
-/// arg-taking pattern; wire it to a real parser once written.
 pub struct PackageDetailCmd;
 
 #[async_trait]
@@ -129,14 +129,167 @@ impl Command for PackageDetailCmd {
         serial: Option<&str>,
         pkg: String,
     ) -> CommandResult<PackageDetail> {
-        let _raw = transport
+        let raw = transport
             .shell(serial, &format!("dumpsys package {pkg}"))
             .await?;
-        // TODO: replace with PackageDumpParser::parse(&_raw) once implemented.
-        Ok(PackageDetail {
-            name: pkg,
-            ..Default::default()
-        })
+        Ok(PackageDumpParser::parse_for(&pkg, &raw)?)
+    }
+}
+
+/// CPU summary via `cat /proc/cpuinfo`.
+pub struct CpuInfoCmd;
+
+#[async_trait]
+impl Command for CpuInfoCmd {
+    type Args = ();
+    type Output = CpuInfo;
+
+    fn meta(&self) -> CommandMeta {
+        CommandMeta {
+            id: "device.cpu",
+            description: "CPU core count and hardware/chipset name",
+            category: Category::Device,
+            mutating: false,
+        }
+    }
+
+    async fn run(
+        &self,
+        transport: &dyn Transport,
+        serial: Option<&str>,
+        _args: (),
+    ) -> CommandResult<CpuInfo> {
+        let raw = transport.shell(serial, "cat /proc/cpuinfo").await?;
+        let mut info = CpuInfoParser::parse(&raw)?;
+
+        // Many modern arm64 kernels drop the `Hardware` line from
+        // /proc/cpuinfo entirely; fall back to the board/chipset prop.
+        if info.hardware.is_empty() {
+            for prop in ["ro.hardware", "ro.board.platform", "ro.product.board"] {
+                let val = transport.shell(serial, &format!("getprop {prop}")).await?;
+                let val = val.trim();
+                if !val.is_empty() {
+                    info.hardware = val.to_string();
+                    break;
+                }
+            }
+        }
+
+        Ok(info)
+    }
+}
+
+/// Screen geometry via `wm size` + `wm density`.
+pub struct ScreenInfoCmd;
+
+#[async_trait]
+impl Command for ScreenInfoCmd {
+    type Args = ();
+    type Output = ScreenInfo;
+
+    fn meta(&self) -> CommandMeta {
+        CommandMeta {
+            id: "device.screen",
+            description: "Screen resolution and density",
+            category: Category::Device,
+            mutating: false,
+        }
+    }
+
+    async fn run(
+        &self,
+        transport: &dyn Transport,
+        serial: Option<&str>,
+        _args: (),
+    ) -> CommandResult<ScreenInfo> {
+        let size_raw = transport.shell(serial, "wm size").await?;
+        let density_raw = transport.shell(serial, "wm density").await?;
+        Ok(ScreenInfoParser::parse_combined(&size_raw, &density_raw)?)
+    }
+}
+
+/// RAM totals via `cat /proc/meminfo`.
+pub struct MemInfoCmd;
+
+#[async_trait]
+impl Command for MemInfoCmd {
+    type Args = ();
+    type Output = MemoryInfo;
+
+    fn meta(&self) -> CommandMeta {
+        CommandMeta {
+            id: "device.memory",
+            description: "Total and available RAM",
+            category: Category::Device,
+            mutating: false,
+        }
+    }
+
+    async fn run(
+        &self,
+        transport: &dyn Transport,
+        serial: Option<&str>,
+        _args: (),
+    ) -> CommandResult<MemoryInfo> {
+        let raw = transport.shell(serial, "cat /proc/meminfo").await?;
+        Ok(MemInfoParser::parse(&raw)?)
+    }
+}
+
+/// Mounted filesystem usage via `df`.
+pub struct StorageInfoCmd;
+
+#[async_trait]
+impl Command for StorageInfoCmd {
+    type Args = ();
+    type Output = Vec<StorageEntry>;
+
+    fn meta(&self) -> CommandMeta {
+        CommandMeta {
+            id: "device.storage",
+            description: "Mounted filesystem sizes and free space",
+            category: Category::Device,
+            mutating: false,
+        }
+    }
+
+    async fn run(
+        &self,
+        transport: &dyn Transport,
+        serial: Option<&str>,
+        _args: (),
+    ) -> CommandResult<Vec<StorageEntry>> {
+        let raw = transport.shell(serial, "df").await?;
+        Ok(StorageParser::parse(&raw)?)
+    }
+}
+
+/// IMEI via `dumpsys iphonesubinfo`. Frequently empty on Android 10+ — that's
+/// a permission gap on the device, not a command failure.
+pub struct ImeiInfoCmd;
+
+#[async_trait]
+impl Command for ImeiInfoCmd {
+    type Args = ();
+    type Output = ImeiInfo;
+
+    fn meta(&self) -> CommandMeta {
+        CommandMeta {
+            id: "device.imei",
+            description: "Device IMEI, if readable without a privileged permission",
+            category: Category::Device,
+            mutating: false,
+        }
+    }
+
+    async fn run(
+        &self,
+        transport: &dyn Transport,
+        serial: Option<&str>,
+        _args: (),
+    ) -> CommandResult<ImeiInfo> {
+        let raw = transport.shell(serial, "dumpsys iphonesubinfo").await?;
+        Ok(ImeiInfoParser::parse(&raw)?)
     }
 }
 
@@ -187,6 +340,11 @@ pub fn builtins() -> Vec<Box<dyn DynCommand>> {
         Box::new(TypedDyn(BatteryCmd)),
         Box::new(TypedDyn(ListPackagesCmd)),
         Box::new(TypedDyn(PackageDetailCmd)),
+        Box::new(TypedDyn(CpuInfoCmd)),
+        Box::new(TypedDyn(ScreenInfoCmd)),
+        Box::new(TypedDyn(MemInfoCmd)),
+        Box::new(TypedDyn(StorageInfoCmd)),
+        Box::new(TypedDyn(ImeiInfoCmd)),
         Box::new(TypedDyn(LogcatSnapshotCmd)),
     ]
 }
@@ -212,8 +370,7 @@ mod tests {
 
     #[tokio::test]
     async fn dyn_command_roundtrips_json() {
-        let t = MockTransport::default()
-            .with("pm list packages", "package:com.a\npackage:com.b");
+        let t = MockTransport::default().with("pm list packages", "package:com.a\npackage:com.b");
         let cmd = TypedDyn(ListPackagesCmd);
         let out = cmd
             .run_json(&t, None, serde_json::Value::Null)

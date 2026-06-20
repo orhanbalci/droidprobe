@@ -33,10 +33,7 @@ pub struct AdbTransport {
 impl Default for AdbTransport {
     fn default() -> Self {
         Self {
-            server_addr: std::net::SocketAddrV4::new(
-                std::net::Ipv4Addr::new(127, 0, 0, 1),
-                5037,
-            ),
+            server_addr: std::net::SocketAddrV4::new(std::net::Ipv4Addr::new(127, 0, 0, 1), 5037),
         }
     }
 }

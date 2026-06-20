@@ -9,10 +9,7 @@ pub enum ParseError {
 
     /// A value was found but could not be converted to the expected type.
     #[error("failed to parse value for `{field}`: {value:?}")]
-    InvalidValue {
-        field: &'static str,
-        value: String,
-    },
+    InvalidValue { field: &'static str, value: String },
 
     /// The overall shape of the input did not match what the parser expected.
     #[error("unexpected output format: {0}")]

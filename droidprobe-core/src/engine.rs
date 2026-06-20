@@ -59,12 +59,7 @@ impl Engine {
     ///
     /// `serial` overrides the engine default for this one call. Mutating
     /// commands are refused when `read_only` is set.
-    pub async fn run(
-        &self,
-        id: &str,
-        serial: Option<&str>,
-        args: Json,
-    ) -> CommandResult<Json> {
+    pub async fn run(&self, id: &str, serial: Option<&str>, args: Json) -> CommandResult<Json> {
         let cmd: &dyn DynCommand = self
             .registry
             .get(id)

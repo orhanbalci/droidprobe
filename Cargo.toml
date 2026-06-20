@@ -45,6 +45,7 @@ adb_client = "2"
 # TUI
 ratatui = "0.29"
 crossterm = { version = "0.28", features = ["event-stream"] }
+fuzzy-matcher = "0.3"
 
 # MCP
 rmcp = { version = "0.16", features = ["server", "transport-io"] }

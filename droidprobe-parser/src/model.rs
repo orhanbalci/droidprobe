@@ -16,6 +16,48 @@ pub struct DeviceInfo {
     pub sdk: u32,
     pub fingerprint: String,
     pub abi: String,
+    pub serial: String,
+}
+
+/// CPU summary from `/proc/cpuinfo`. Architecture is reported separately via
+/// [`DeviceInfo::abi`] — `/proc/cpuinfo` doesn't carry it reliably on arm64.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CpuInfo {
+    pub core_count: u32,
+    pub hardware: String,
+}
+
+/// Screen geometry from `wm size` + `wm density`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ScreenInfo {
+    pub width: u32,
+    pub height: u32,
+    pub density_dpi: u32,
+}
+
+/// RAM totals from `/proc/meminfo`, in kilobytes as reported by the kernel.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MemoryInfo {
+    pub total_kb: u64,
+    pub available_kb: u64,
+}
+
+/// One mounted filesystem row from `df`, sizes in kilobytes.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StorageEntry {
+    pub filesystem: String,
+    pub size_kb: u64,
+    pub used_kb: u64,
+    pub available_kb: u64,
+    pub use_percent: u8,
+    pub mounted_on: String,
+}
+
+/// IMEI from `dumpsys iphonesubinfo`. Often empty on Android 10+ since that
+/// dump requires a privileged permission `adb shell` doesn't hold.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ImeiInfo {
+    pub imei: String,
 }
 
 /// Battery state from `dumpsys battery`.
@@ -64,7 +106,17 @@ pub struct PackageDetail {
     pub activities: Vec<Component>,
     pub services: Vec<Component>,
     pub receivers: Vec<Component>,
+    /// Content providers almost never appear here: they're invoked by
+    /// authority URI, not intent, so they have no entry in the resolver
+    /// tables this list is built from. Expect this to usually be empty.
     pub providers: Vec<Component>,
+    /// Name of the activity with both `MAIN` action and `LAUNCHER` category,
+    /// if one was found — the icon a user taps to open the app.
+    pub launcher_activity: Option<String>,
+    /// Full unparsed `dumpsys package` text, kept alongside the structured
+    /// fields so the UI can show it directly — useful both as a fallback
+    /// when a field isn't parsed yet and for capturing real-device fixtures.
+    pub raw: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -84,12 +136,27 @@ pub enum ProtectionLevel {
     Unknown,
 }
 
+/// A declared component (activity/service/receiver/provider), as seen in
+/// `dumpsys package`'s intent-resolver tables.
+///
+/// Note there's no `exported` field: the real Android build this was tested
+/// against never prints an explicit `exported=` value anywhere in
+/// `dumpsys package` or `pm dump` output for any component. The only proxy
+/// available from this text is "has a declared intent-filter" (which is what
+/// landing in a resolver table means), and that's not equivalent to
+/// `exported="true"` — a developer can have an intent-filter and still set
+/// `exported="false"` explicitly, and that override isn't visible here. The
+/// only fully accurate way to get the flag is parsing AndroidManifest.xml
+/// out of the APK directly, which this parser doesn't do.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Component {
     pub name: String,
-    /// Exported components are reachable from outside the app — a security flag
-    /// worth surfacing prominently.
-    pub exported: bool,
+    /// Intent actions this component declares a filter for, e.g.
+    /// `android.intent.action.BOOT_COMPLETED`.
+    pub intent_actions: Vec<String>,
+    /// Permission required to invoke this component, if the resolver table
+    /// listed one (e.g. `android.permission.BIND_QUICK_SETTINGS_TILE`).
+    pub permission: Option<String>,
 }
 
 /// One process row from `top -b -n1`.

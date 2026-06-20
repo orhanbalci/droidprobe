@@ -103,10 +103,7 @@ impl Poller {
             }
         });
 
-        self.handles.push(PollHandle {
-            command_id,
-            handle,
-        });
+        self.handles.push(PollHandle { command_id, handle });
     }
 
     /// Abort every running job.

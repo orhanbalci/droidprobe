@@ -2,6 +2,10 @@
 //!
 //! `getprop` emits lines shaped like `[ro.product.model]: [Pixel 7]`. We build
 //! a key->value map and pick out the properties we care about for [`DeviceInfo`].
+//!
+//! `ro.product.cpu.abi` is the classic prop, but Treble-ized devices often
+//! leave it unset and only populate `ro.product.cpu.abilist` (a comma list,
+//! primary ABI first), so the ABI lookup falls back to that.
 
 use std::collections::HashMap;
 
@@ -44,6 +48,18 @@ impl Parse for GetpropParser {
             .and_then(|s| s.parse::<u32>().ok())
             .unwrap_or(0);
 
+        let abi = {
+            let direct = get("ro.product.cpu.abi");
+            if !direct.is_empty() {
+                direct
+            } else {
+                map.get("ro.product.cpu.abilist")
+                    .and_then(|list| list.split(',').next())
+                    .unwrap_or_default()
+                    .to_string()
+            }
+        };
+
         Ok(DeviceInfo {
             model: get("ro.product.model"),
             manufacturer: get("ro.product.manufacturer"),
@@ -51,7 +67,8 @@ impl Parse for GetpropParser {
             android_release: get("ro.build.version.release"),
             sdk,
             fingerprint: get("ro.build.fingerprint"),
-            abi: get("ro.product.cpu.abi"),
+            abi,
+            serial: get("ro.serialno"),
         })
     }
 }

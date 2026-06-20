@@ -92,8 +92,12 @@ impl AndroidInspector {
         &self,
         rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
     ) -> Result<CallToolResult, McpError> {
-        self.call("device.info", args.serial.as_deref(), serde_json::Value::Null)
-            .await
+        self.call(
+            "device.info",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
     }
 
     #[tool(description = "Get battery level, charging state, temperature and voltage")]
@@ -101,8 +105,12 @@ impl AndroidInspector {
         &self,
         rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
     ) -> Result<CallToolResult, McpError> {
-        self.call("battery.status", args.serial.as_deref(), serde_json::Value::Null)
-            .await
+        self.call(
+            "battery.status",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
     }
 
     #[tool(description = "List installed third-party packages on the device")]
@@ -110,11 +118,17 @@ impl AndroidInspector {
         &self,
         rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<SerialArgs>,
     ) -> Result<CallToolResult, McpError> {
-        self.call("package.list", args.serial.as_deref(), serde_json::Value::Null)
-            .await
+        self.call(
+            "package.list",
+            args.serial.as_deref(),
+            serde_json::Value::Null,
+        )
+        .await
     }
 
-    #[tool(description = "Get permissions and components (activities, services, receivers) for a package")]
+    #[tool(
+        description = "Get permissions and components (activities, services, receivers) for a package"
+    )]
     async fn get_package_details(
         &self,
         rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<PackageArgs>,
@@ -127,13 +141,16 @@ impl AndroidInspector {
         .await
     }
 
-    #[tool(description = "Get a recent snapshot of logcat output, useful for diagnosing crashes/ANRs")]
+    #[tool(
+        description = "Get a recent snapshot of logcat output, useful for diagnosing crashes/ANRs"
+    )]
     async fn get_logcat(
         &self,
         rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<LogcatArgs>,
     ) -> Result<CallToolResult, McpError> {
         let payload = serde_json::json!({ "limit": args.limit });
-        self.call("log.snapshot", args.serial.as_deref(), payload).await
+        self.call("log.snapshot", args.serial.as_deref(), payload)
+            .await
     }
 }
 
