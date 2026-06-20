@@ -6,6 +6,14 @@ server (`droidprobe-mcp`) for agents.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the full design and phased plan.
 
+## Screenshots
+
+![droidprobe walkthrough](./assets/droidprobe-demo.gif)
+
+| Overview | Packages | Logs |
+| --- | --- | --- |
+| ![Overview tab](./assets/screenshot-overview.png) | ![Packages tab](./assets/screenshot-packages.png) | ![Logs tab](./assets/screenshot-logs.png) |
+
 ## Workspace layout
 
 ```
