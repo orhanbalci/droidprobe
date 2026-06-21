@@ -28,15 +28,19 @@ pub enum DetailTab {
     Services,
     Receivers,
     Providers,
+    /// Files in the app's private data directory, via `run-as`. Only
+    /// populated for debuggable packages (or a rooted device).
+    Data,
 }
 
 impl DetailTab {
-    const ALL: [DetailTab; 5] = [
+    const ALL: [DetailTab; 6] = [
         DetailTab::Permissions,
         DetailTab::Activities,
         DetailTab::Services,
         DetailTab::Receivers,
         DetailTab::Providers,
+        DetailTab::Data,
     ];
 
     pub fn title(self) -> &'static str {
@@ -46,6 +50,7 @@ impl DetailTab {
             DetailTab::Services => "Services",
             DetailTab::Receivers => "Receivers",
             DetailTab::Providers => "Providers",
+            DetailTab::Data => "Data",
         }
     }
 
@@ -59,11 +64,12 @@ impl DetailTab {
         Self::ALL[(i + Self::ALL.len() - 1) % Self::ALL.len()]
     }
 
-    /// The component list this tab shows, or `None` for `Permissions` (which
-    /// renders [`PackageDetail::permissions`] instead).
+    /// The component list this tab shows, or `None` for `Permissions`/`Data`
+    /// (which render [`PackageDetail::permissions`] / their own file listing
+    /// instead).
     pub fn components(self, detail: &PackageDetail) -> Option<&[Component]> {
         match self {
-            DetailTab::Permissions => None,
+            DetailTab::Permissions | DetailTab::Data => None,
             DetailTab::Activities => Some(&detail.activities),
             DetailTab::Services => Some(&detail.services),
             DetailTab::Receivers => Some(&detail.receivers),

@@ -46,6 +46,20 @@ pub struct PackageArgs {
     pub serial: Option<String>,
 }
 
+/// Args for reading a file out of an app's private data directory.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PackageFileArgs {
+    /// The package name, e.g. `com.example.app`. Must be debuggable, or the
+    /// device must be rooted — this is an Android constraint on `run-as`,
+    /// not a choice this tool makes.
+    pub package: String,
+    /// Path relative to the app's data directory, e.g. `shared_prefs/app.xml`
+    /// or `databases/app.db`. No leading `/`, no `..` segments.
+    pub path: String,
+    #[serde(default)]
+    pub serial: Option<String>,
+}
+
 /// Args for a logcat snapshot.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct LogcatArgs {
@@ -209,6 +223,35 @@ impl AndroidInspector {
     }
 
     #[tool(
+        description = "List files in a debuggable app's private data directory (via `run-as`). \
+                        Fails with a clear error if the package isn't debuggable and the device \
+                        isn't rooted."
+    )]
+    async fn list_package_data_files(
+        &self,
+        rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<PackageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let payload = serde_json::json!({ "package": args.package });
+        self.call("package.data.list", args.serial.as_deref(), payload)
+            .await
+    }
+
+    #[tool(
+        description = "Read a file from a debuggable app's private data directory (via `run-as`), \
+                        e.g. shared_prefs/*.xml or a sqlite databases/*.db file. Content over 64KB \
+                        is truncated. Fails with a clear error if the package isn't debuggable and \
+                        the device isn't rooted."
+    )]
+    async fn read_package_data_file(
+        &self,
+        rmcp::handler::server::wrapper::Parameters(args): rmcp::handler::server::wrapper::Parameters<PackageFileArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let payload = serde_json::json!({ "package": args.package, "path": args.path });
+        self.call("package.data.read", args.serial.as_deref(), payload)
+            .await
+    }
+
+    #[tool(
         description = "Get a recent snapshot of logcat output, useful for diagnosing crashes/ANRs"
     )]
     async fn get_logcat(
@@ -230,8 +273,13 @@ impl ServerHandler for AndroidInspector {
                 "Inspect a connected Android device over ADB. Tools are read-only: \
                  they report device identity/hardware (model, CPU, screen, RAM, \
                  storage, IMEI), battery, installed packages, package \
-                 permissions/components, and logcat snapshots. Use get_logcat plus \
-                 get_package_details to investigate why an app is misbehaving."
+                 permissions/components, logcat snapshots, and (for debuggable \
+                 packages) the files an app has written to its own private data \
+                 directory. Use get_logcat plus get_package_details to investigate \
+                 why an app is misbehaving; use list_package_data_files and \
+                 read_package_data_file to inspect what it persisted (prefs, \
+                 databases, cache) — these only work when the package is \
+                 debuggable or the device is rooted."
                     .into(),
             ),
             ..Default::default()

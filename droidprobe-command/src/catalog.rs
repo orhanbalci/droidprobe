@@ -8,8 +8,8 @@
 use async_trait::async_trait;
 
 use droidprobe_parser::model::{
-    BatteryInfo, CpuInfo, DeviceInfo, ImeiInfo, LogEntry, MemoryInfo, PackageDetail, PackageRef,
-    ScreenInfo, StorageEntry,
+    BatteryInfo, CpuInfo, DeviceInfo, ImeiInfo, LogEntry, MemoryInfo, PackageDetail,
+    PackageFileContent, PackageRef, ScreenInfo, StorageEntry,
 };
 use droidprobe_parser::parsers::{
     battery::BatteryParser, cpuinfo::CpuInfoParser, getprop::GetpropParser, imei::ImeiInfoParser,
@@ -19,7 +19,7 @@ use droidprobe_parser::parsers::{
 use droidprobe_parser::Parse;
 
 use crate::command::{Category, Command, CommandMeta, DynCommand, TypedDyn};
-use crate::error::CommandResult;
+use crate::error::{CommandError, CommandResult};
 use crate::transport::Transport;
 
 /// Device identity via `getprop`.
@@ -133,6 +133,167 @@ impl Command for PackageDetailCmd {
             .shell(serial, &format!("dumpsys package {pkg}"))
             .await?;
         Ok(PackageDumpParser::parse_for(&pkg, &raw)?)
+    }
+}
+
+/// Rejects anything that isn't a plausible Android package name before it
+/// gets interpolated into a shell command line. `Transport::shell` sends its
+/// argument to the device's `sh -c`, so this is the only thing standing
+/// between an agent-supplied string and shell injection on the device.
+fn validate_package_name(pkg: &str) -> CommandResult<()> {
+    let valid = !pkg.is_empty()
+        && pkg.contains('.')
+        && pkg
+            .split('.')
+            .all(|seg| !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+        && pkg.chars().next().is_some_and(|c| c.is_ascii_alphabetic());
+    if valid {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidArgument(format!(
+            "`{pkg}` is not a valid Android package name"
+        )))
+    }
+}
+
+/// Rejects anything but a plain relative path: no traversal, no shell
+/// metacharacters. Same rationale as [`validate_package_name`] — this string
+/// also ends up interpolated into a shell command line.
+fn validate_relative_path(path: &str) -> CommandResult<()> {
+    let valid = !path.is_empty()
+        && !path.starts_with('/')
+        && !path.split('/').any(|seg| seg.is_empty() || seg == "..")
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/'));
+    if valid {
+        Ok(())
+    } else {
+        Err(CommandError::InvalidArgument(format!(
+            "`{path}` is not a safe relative path"
+        )))
+    }
+}
+
+/// `run-as` prints a one-line error and produces no other output when it
+/// can't switch into the package's uid (unknown package, not debuggable, no
+/// root). Surface that as a clear command error instead of letting it fall
+/// through as a confusing empty/garbled result.
+fn check_run_as_output(pkg: &str, raw: &str) -> CommandResult<()> {
+    if raw.trim_start().starts_with("run-as:") {
+        return Err(CommandError::InvalidArgument(format!(
+            "cannot access `{pkg}`'s data dir: {} \
+             (the package must be debuggable, or the device rooted)",
+            raw.trim()
+        )));
+    }
+    Ok(())
+}
+
+/// Package name argument shared by the data-directory commands below.
+#[derive(Debug, serde::Deserialize)]
+pub struct PackageArg {
+    pub package: String,
+}
+
+/// List files in an app's private data directory via
+/// `run-as <pkg> find . -type f`. Only works for debuggable packages, or on a
+/// rooted device — that's an Android constraint, not a choice this tool makes.
+pub struct PackageDataListCmd;
+
+#[async_trait]
+impl Command for PackageDataListCmd {
+    type Args = PackageArg;
+    type Output = Vec<String>;
+
+    fn meta(&self) -> CommandMeta {
+        CommandMeta {
+            id: "package.data.list",
+            description: "List files in a debuggable app's private data directory (run-as)",
+            category: Category::Package,
+            mutating: false,
+        }
+    }
+
+    async fn run(
+        &self,
+        transport: &dyn Transport,
+        serial: Option<&str>,
+        args: PackageArg,
+    ) -> CommandResult<Vec<String>> {
+        validate_package_name(&args.package)?;
+        let raw = transport
+            .shell(serial, &format!("run-as {} find . -type f", args.package))
+            .await?;
+        check_run_as_output(&args.package, &raw)?;
+        Ok(raw
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(|l| l.trim_start_matches("./").to_string())
+            .collect())
+    }
+}
+
+/// Package + relative path argument for reading a single data file.
+#[derive(Debug, serde::Deserialize)]
+pub struct PackageFileArg {
+    pub package: String,
+    pub path: String,
+}
+
+/// Largest file content this command will return inline; longer files are
+/// truncated rather than flooding an agent's context window.
+const MAX_PACKAGE_FILE_BYTES: usize = 65_536;
+
+/// Read one file from an app's private data directory via
+/// `run-as <pkg> cat <path>`. `path` must be relative (see
+/// [`validate_relative_path`]) and resolves against the app's data dir.
+pub struct PackageDataReadCmd;
+
+#[async_trait]
+impl Command for PackageDataReadCmd {
+    type Args = PackageFileArg;
+    type Output = PackageFileContent;
+
+    fn meta(&self) -> CommandMeta {
+        CommandMeta {
+            id: "package.data.read",
+            description: "Read a file from a debuggable app's private data directory (run-as)",
+            category: Category::Package,
+            mutating: false,
+        }
+    }
+
+    async fn run(
+        &self,
+        transport: &dyn Transport,
+        serial: Option<&str>,
+        args: PackageFileArg,
+    ) -> CommandResult<PackageFileContent> {
+        validate_package_name(&args.package)?;
+        validate_relative_path(&args.path)?;
+        let raw = transport
+            .shell(
+                serial,
+                &format!("run-as {} cat ./{}", args.package, args.path),
+            )
+            .await?;
+        check_run_as_output(&args.package, &raw)?;
+
+        let size_bytes = raw.len() as u64;
+        let truncated = raw.len() > MAX_PACKAGE_FILE_BYTES;
+        let content = if truncated {
+            raw.chars().take(MAX_PACKAGE_FILE_BYTES).collect()
+        } else {
+            raw
+        };
+        Ok(PackageFileContent {
+            path: args.path,
+            content,
+            truncated,
+            size_bytes,
+        })
     }
 }
 
@@ -340,6 +501,8 @@ pub fn builtins() -> Vec<Box<dyn DynCommand>> {
         Box::new(TypedDyn(BatteryCmd)),
         Box::new(TypedDyn(ListPackagesCmd)),
         Box::new(TypedDyn(PackageDetailCmd)),
+        Box::new(TypedDyn(PackageDataListCmd)),
+        Box::new(TypedDyn(PackageDataReadCmd)),
         Box::new(TypedDyn(CpuInfoCmd)),
         Box::new(TypedDyn(ScreenInfoCmd)),
         Box::new(TypedDyn(MemInfoCmd)),
@@ -366,6 +529,92 @@ mod tests {
             .expect("command should succeed");
         assert_eq!(out.level, 90);
         assert_eq!(out.power_source, "USB");
+    }
+
+    #[tokio::test]
+    async fn package_data_list_strips_dot_slash_prefix() {
+        let t = MockTransport::default().with("run-as com.scorp.who find", "./shared_prefs/app.xml\n./databases/app.db\n");
+        let out = PackageDataListCmd
+            .run(
+                &t,
+                None,
+                PackageArg {
+                    package: "com.scorp.who".into(),
+                },
+            )
+            .await
+            .expect("command should succeed");
+        assert_eq!(out, vec!["shared_prefs/app.xml", "databases/app.db"]);
+    }
+
+    #[tokio::test]
+    async fn package_data_list_surfaces_run_as_failure() {
+        let t = MockTransport::default()
+            .with("run-as com.example.app find", "run-as: package not debuggable: com.example.app\n");
+        let err = PackageDataListCmd
+            .run(
+                &t,
+                None,
+                PackageArg {
+                    package: "com.example.app".into(),
+                },
+            )
+            .await
+            .expect_err("non-debuggable package should be rejected");
+        assert!(err.to_string().contains("debuggable"));
+    }
+
+    #[tokio::test]
+    async fn package_data_list_rejects_malformed_package_name() {
+        let t = MockTransport::default();
+        let err = PackageDataListCmd
+            .run(
+                &t,
+                None,
+                PackageArg {
+                    package: "com.evil; rm -rf /".into(),
+                },
+            )
+            .await
+            .expect_err("shell metacharacters in package name must be rejected");
+        assert!(matches!(err, CommandError::InvalidArgument(_)));
+    }
+
+    #[tokio::test]
+    async fn package_data_read_rejects_path_traversal() {
+        let t = MockTransport::default();
+        let err = PackageDataReadCmd
+            .run(
+                &t,
+                None,
+                PackageFileArg {
+                    package: "com.scorp.who".into(),
+                    path: "../../etc/hosts".into(),
+                },
+            )
+            .await
+            .expect_err("`..` segments must be rejected");
+        assert!(matches!(err, CommandError::InvalidArgument(_)));
+    }
+
+    #[tokio::test]
+    async fn package_data_read_truncates_oversized_content() {
+        let big = "a".repeat(MAX_PACKAGE_FILE_BYTES + 100);
+        let t = MockTransport::default().with("run-as com.scorp.who cat", &big);
+        let out = PackageDataReadCmd
+            .run(
+                &t,
+                None,
+                PackageFileArg {
+                    package: "com.scorp.who".into(),
+                    path: "files/big.txt".into(),
+                },
+            )
+            .await
+            .expect("command should succeed");
+        assert!(out.truncated);
+        assert_eq!(out.content.len(), MAX_PACKAGE_FILE_BYTES);
+        assert_eq!(out.size_bytes, (MAX_PACKAGE_FILE_BYTES + 100) as u64);
     }
 
     #[tokio::test]

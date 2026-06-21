@@ -148,6 +148,20 @@ pub enum ProtectionLevel {
 /// `exported="false"` explicitly, and that override isn't visible here. The
 /// only fully accurate way to get the flag is parsing AndroidManifest.xml
 /// out of the APK directly, which this parser doesn't do.
+/// Content of a single file read from a debuggable app's private data
+/// directory via `run-as <pkg> cat <path>`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PackageFileContent {
+    /// Path relative to the app's data directory, e.g. `shared_prefs/app.xml`.
+    pub path: String,
+    /// File content, lossily decoded as UTF-8 and capped at a byte limit.
+    pub content: String,
+    /// True if `content` was cut short because the file exceeded the cap.
+    pub truncated: bool,
+    /// Size of the content actually read, in bytes (before any truncation).
+    pub size_bytes: u64,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Component {
     pub name: String,
