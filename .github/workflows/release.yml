@@ -1,0 +1,82 @@
+name: Release
+
+# Builds droidprobe (TUI) and droidprobe-mcp for macOS (Intel + Apple
+# Silicon), Linux x86_64, and Windows x86_64, then attaches the archives to
+# the GitHub Release for the pushed tag.
+#
+# Cut a release with: git tag v0.1.0 && git push origin v0.1.0
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive_ext: tar.gz
+          - os: macos-13
+            target: x86_64-apple-darwin
+            archive_ext: tar.gz
+          - os: macos-14
+            target: aarch64-apple-darwin
+            archive_ext: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive_ext: zip
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libusb dev headers (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }} -p droidprobe-tui -p droidprobe-mcp
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          dist=droidprobe-${{ github.ref_name }}-${{ matrix.target }}
+          mkdir -p "$dist"
+          cp target/${{ matrix.target }}/release/droidprobe "$dist"/
+          cp target/${{ matrix.target }}/release/droidprobe-mcp "$dist"/
+          cp README.md LICENSE "$dist"/
+          tar -czf "$dist.tar.gz" "$dist"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dist = "droidprobe-${{ github.ref_name }}-${{ matrix.target }}"
+          New-Item -ItemType Directory -Path $dist
+          Copy-Item "target/${{ matrix.target }}/release/droidprobe.exe" $dist/
+          Copy-Item "target/${{ matrix.target }}/release/droidprobe-mcp.exe" $dist/
+          Copy-Item README.md, LICENSE $dist/
+          Compress-Archive -Path $dist -DestinationPath "$dist.zip"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: droidprobe-${{ github.ref_name }}-${{ matrix.target }}.${{ matrix.archive_ext }}

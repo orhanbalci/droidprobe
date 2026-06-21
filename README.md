@@ -109,6 +109,18 @@ with Rust installed can run:
 cargo install droidprobe-mcp
 ```
 
+### Prebuilt binaries (no Rust toolchain needed)
+
+`.github/workflows/release.yml` cross-builds both `droidprobe` (TUI) and
+`droidprobe-mcp` for macOS (Intel + Apple Silicon), Linux x86_64, and Windows
+x86_64 whenever a `v*.*.*` tag is pushed, and attaches the archives to a
+GitHub Release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
 ### List in the MCP registry
 
 The [official MCP registry](https://github.com/modelcontextprotocol/registry)
